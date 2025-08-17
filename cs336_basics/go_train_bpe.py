@@ -6,8 +6,8 @@ import regex as re
 import numpy as np
 
 from tests.common import FIXTURES_PATH, gpt2_bytes_to_unicode
-from cs336_basics.imp_bpe_tokenizer import BPE_Tokenizer
-from cs336_basics.imp_train_bpe import PAT, train_bpe
+from cs336_basics.impl_bpe_tokenizer import BPE_Tokenizer
+from cs336_basics.impl_train_bpe import PAT, train_bpe
 
 def save_bpe_vocab_merges(vocab, merges, output_path, overwrite=False):
     gpt2_byte_encoder = gpt2_bytes_to_unicode()

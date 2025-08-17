@@ -34,7 +34,7 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
-    from cs336_basics.imp_model import Linear
+    from cs336_basics.impl_model import Linear
     linear = Linear(d_in, d_out)
     linear.load_state_dict({"weights": weights})
     return linear(in_features)
@@ -58,7 +58,7 @@ def run_embedding(
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
-    from cs336_basics.imp_model import Embedding
+    from cs336_basics.impl_model import Embedding
     embedding = Embedding(vocab_size, d_model)
     embedding.load_state_dict({"weights": weights})
     return embedding(token_ids)
@@ -93,7 +93,7 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    from cs336_basics.imp_model import SwiGLU
+    from cs336_basics.impl_model import SwiGLU
     swiglu = SwiGLU(d_model, d_ff)
     swiglu.load_state_dict({"w1": w1_weight, "w2": w2_weight, "w3": w3_weight})
     return swiglu(in_features)
@@ -117,8 +117,8 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    raise NotImplementedError
-
+    from cs336_basics.impl_model import scaled_dot_product_attention_impl
+    return scaled_dot_product_attention_impl(Q, K, V, mask)
 
 def run_multihead_self_attention(
     d_model: int,
@@ -151,7 +151,10 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    from cs336_basics.impl_model import MultiHeadAttention
+    multihead_attention = MultiHeadAttention(d_model, num_heads)
+    multihead_attention.load_state_dict({"q_proj": q_proj_weight, "k_proj": k_proj_weight, "v_proj": v_proj_weight, "o_proj": o_proj_weight})
+    return multihead_attention(in_features)
 
 
 def run_multihead_self_attention_with_rope(
@@ -191,8 +194,10 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
-
+    from cs336_basics.impl_model import MultiHeadAttention
+    multihead_attention = MultiHeadAttention(d_model, num_heads, theta, max_seq_len, token_positions)
+    multihead_attention.load_state_dict({"q_proj": q_proj_weight, "k_proj": k_proj_weight, "v_proj": v_proj_weight, "o_proj": o_proj_weight})
+    return multihead_attention(in_features)
 
 def run_rope(
     d_k: int,
@@ -213,7 +218,7 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    from cs336_basics.imp_model import RoPE
+    from cs336_basics.impl_model import RoPE
     rope = RoPE(theta, d_k, max_seq_len)
     return rope(in_query_or_key, token_positions)
 
@@ -393,7 +398,7 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    from cs336_basics.imp_model import RMSNorm
+    from cs336_basics.impl_model import RMSNorm
     rmsnorm = RMSNorm(d_model, eps)
     rmsnorm.load_state_dict({"weights": weights})
     return rmsnorm(in_features)
@@ -448,7 +453,8 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
+    from cs336_basics.impl_model import softmax_impl
+    return softmax_impl(in_features, dim)
 
 
 def run_cross_entropy(
@@ -576,7 +582,7 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    from cs336_basics.imp_bpe_tokenizer import BPE_Tokenizer
+    from cs336_basics.impl_bpe_tokenizer import BPE_Tokenizer
     return BPE_Tokenizer(vocab, merges, special_tokens)
 
 def run_train_bpe(
@@ -606,7 +612,7 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
         """
-    from cs336_basics.imp_train_bpe import train_bpe
+    from cs336_basics.impl_train_bpe import train_bpe
     return train_bpe(input_path, vocab_size, special_tokens, **kwargs)
 
 def run_train_bpe_bak(

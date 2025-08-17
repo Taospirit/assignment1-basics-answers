@@ -3,7 +3,7 @@ import os
 import regex as re
 import json
 from typing import Iterable, Iterator
-from cs336_basics.imp_train_bpe import PAT, word_to_bytes_tuple
+from cs336_basics.impl_train_bpe import PAT, word_to_bytes_tuple
 
 class BPE_Tokenizer:
     def __init__(self, vocab, merges, special_tokens=None) -> None:

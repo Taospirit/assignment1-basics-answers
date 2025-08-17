@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from einops import rearrange, reduce, einsum
 
 
 def _init_weights(in_features, out_features, device, dtype):
@@ -14,6 +15,33 @@ def _init_embedding(num_embeddings, embedding_dim, device, dtype):
     nn.init.trunc_normal_(w, mean=0.0, std=1, a=-3, b=3)
     w = nn.Parameter(w)
     return w
+
+def softmax_impl(x: torch.Tensor, dim: int) -> torch.Tensor:
+    x = x - torch.max(x, dim=dim, keepdim=True)[0]
+    x = torch.exp(x)
+    x_sum = torch.sum(x, dim=dim, keepdim=True)
+    # Add small epsilon to prevent division by zero
+    x_sum = torch.clamp(x_sum, min=1e-12)
+    x = x / x_sum
+    return x
+
+def scaled_dot_product_attention_impl(
+    Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, mask: torch.Tensor | None = None
+) -> torch.Tensor:
+    """
+    Q: [..., seq_len_q, d_k]
+    K: [..., seq_len_k, d_k]
+    V: [..., seq_len_v, d_v]
+    mask: [..., seq_len_q, secq_len_k]
+    """
+    d_k = Q.shape[-1]
+    QK = einsum(Q, K, "... seq_q d_k, ... seq_k d_k -> ... seq_q seq_k") # [..., seq_len_q, seq_len_k]
+    QK = QK / (d_k ** 0.5)
+    if mask is not None:
+        QK = QK.masked_fill(mask == 0, float("-inf"))
+    QK = softmax_impl(QK, dim=-1)
+    # einsum is so awesome!!!
+    return einsum(QK, V, "... seq_q seq_k, ... seq_k d_v -> ... seq_q d_v") # [..., seq_len_q, d_v]
 
 class Linear(nn.Module):
     """Implementing the linear module"""
@@ -104,7 +132,6 @@ class SwiGLU(nn.Module):
         # W2(SiLU(W1x) * W3x)
         return (self.silu(x @ self.w1.T) * (x @ self.w3.T)) @ self.w2.T
 
-
 class RoPE(nn.Module):
     """Implementing the RoPE module"""
     def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None) :
@@ -115,20 +142,16 @@ class RoPE(nn.Module):
         # device: torch.device | None = None Device to store the buffer on
         super().__init__()
         assert d_k % 2 == 0, "RoPE requires even dimension d_k"
-
-        self.theta = theta
         self.d_k = d_k
-        self.max_seq_len = max_seq_len
         self.device = device if device is not None else torch.device("cpu")
-
         # precompute the frequency sequence
         # 根据 RoPE 论文，频率应该是 theta^(-2i/d) 其中 i = 0, 1, ..., d/2-1
         half_dim = self.d_k // 2
         freq_seq = torch.arange(0, half_dim, device=self.device)
-        inv_freq = 1.0 / (self.theta ** (freq_seq * 2.0 / self.d_k))
-        # [max_seq_len, d_k/2], i * theta^(-2i/d)
-        t = torch.arange(max_seq_len, device=self.device)
-        freqs = torch.einsum("i,j->ij", t, inv_freq) # [max_seq_len, d_k/2]
+        inv_freq = 1.0 / (theta ** (freq_seq * 2.0 / self.d_k))
+        # i * theta^(-2i/d)
+        t = torch.arange(max_seq_len, device=self.device) # [max_seq_len]
+        freqs = einsum(t, inv_freq, "seq_len, half_dim -> seq_len half_dim") # [max_seq_len, d_k/2]
         
         # 注册 buffer（不需要持久化到 checkpoint）
         self.register_buffer("cos_cached", freqs.cos(), persistent=False)  # [max_seq_len, d_k/2]
@@ -163,3 +186,76 @@ class RoPE(nn.Module):
         result[..., 1::2] = x2_rot  # 奇数索引
         
         return result
+
+class MultiHeadAttention(nn.Module):
+    """Implementing the MultiHeadAttention module"""
+    def __init__(self, 
+        d_model: int, 
+        num_heads: int, 
+        theta: float = None, 
+        max_seq_len: int = None, 
+        token_positions: torch.Tensor = None,
+        device=None, 
+        dtype=None):
+        # Construct the MultiHeadAttention module. This function should accept the following parameters:
+        # d_model: int Hidden dimension of the model
+        # num_heads: int Number of attention heads
+        # device: torch.device | None = None Device to store the parameters on
+        # dtype: torch.dtype | None = None Data type of the parameters
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.device = device if device is not None else torch.device("cpu")
+        self.dtype = dtype if dtype is not None else torch.float32
+
+        self.q_proj = _init_weights(d_model, d_model, self.device, self.dtype)
+        self.k_proj = _init_weights(d_model, d_model, self.device, self.dtype)
+        self.v_proj = _init_weights(d_model, d_model, self.device, self.dtype)
+        self.o_proj = _init_weights(d_model, d_model, self.device, self.dtype)
+        # slice the d_model into num_heads heads
+        self.d_k = d_model // num_heads
+        self.d_v = d_model // num_heads
+    
+        if theta is not None and max_seq_len is not None:
+            self.RoPE = RoPE(theta, self.d_k, max_seq_len, self.device)
+        else:
+            self.RoPE = None
+        self.token_positions = token_positions
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Process an input tensor of shape (batch_size, sequence_length, d_model) 
+        # and return a tensor of the same shape.
+        # Note that you should tolerate x with an arbitrary number of batch dimensions. You should
+        # assume that the token positions are a tensor of shape (..., sequence_length) specifying the token
+        # positions of x along the sequence dimension.
+        # You should use the token positions to slice your (possibly precomputed) cos and sin tensors
+        # along the sequence dimension.
+        *batch_dims, seq_len, d_model = x.shape
+        assert d_model == self.d_model, f"d_model not match: {d_model} != {self.d_model}"
+        # project the input to q, k, v
+        q = x @ self.q_proj.T # [..., seq_len, d_model] -> [..., seq_len, d_model]
+        k = x @ self.k_proj.T # [..., seq_len, d_model] -> [..., seq_len, d_model]
+        v = x @ self.v_proj.T # [..., seq_len, d_model] -> [..., seq_len, d_model]
+
+        # Split heads using rearrange for better readability
+        q = rearrange(q, '... seq_len (num_heads d_k) -> ... num_heads seq_len d_k', 
+                     num_heads=self.num_heads, d_k=self.d_k)
+        k = rearrange(k, '... seq_len (num_heads d_k) -> ... num_heads seq_len d_k', 
+                     num_heads=self.num_heads, d_k=self.d_k)
+        v = rearrange(v, '... seq_len (num_heads d_k) -> ... num_heads seq_len d_k', 
+                     num_heads=self.num_heads, d_k=self.d_k)
+
+        # apply RoPE to q and k
+        if self.RoPE is not None:
+            q = self.RoPE(q, self.token_positions)
+            k = self.RoPE(k, self.token_positions)
+
+        # apply scaled dot product attention
+        # Create causal mask: 1 for allowed positions, 0 for masked positions
+        mask = torch.tril(torch.ones(seq_len, seq_len, device=self.device, dtype=torch.bool), diagonal=0)
+        attn = scaled_dot_product_attention_impl(q, k, v, mask)
+
+        # Concatenate heads using rearrange
+        attn = rearrange(attn, '... num_heads seq_len d_k -> ... seq_len (num_heads d_k)')
+        attn = attn @ self.o_proj.T
+        return attn
