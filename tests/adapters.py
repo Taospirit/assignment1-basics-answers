@@ -415,7 +415,6 @@ def run_transformer_lm(
         d_ff,
         rope_theta,
     )
-    # transformer_lm.load_state_dict(weights)
     transformer_lm.embedding.load_state_dict(
         {"weights": weights["token_embeddings.weight"]}
     )
