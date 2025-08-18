@@ -35,6 +35,7 @@ def run_linear(
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
     from cs336_basics.impl_model import Linear
+
     linear = Linear(d_in, d_out)
     linear.load_state_dict({"weights": weights})
     return linear(in_features)
@@ -59,6 +60,7 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
     from cs336_basics.impl_model import Embedding
+
     embedding = Embedding(vocab_size, d_model)
     embedding.load_state_dict({"weights": weights})
     return embedding(token_ids)
@@ -94,6 +96,7 @@ def run_swiglu(
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
     from cs336_basics.impl_model import SwiGLU
+
     swiglu = SwiGLU(d_model, d_ff)
     swiglu.load_state_dict({"w1": w1_weight, "w2": w2_weight, "w3": w3_weight})
     return swiglu(in_features)
@@ -118,7 +121,9 @@ def run_scaled_dot_product_attention(
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
     from cs336_basics.impl_model import scaled_dot_product_attention_impl
+
     return scaled_dot_product_attention_impl(Q, K, V, mask)
+
 
 def run_multihead_self_attention(
     d_model: int,
@@ -152,8 +157,16 @@ def run_multihead_self_attention(
         implementation with the given QKV projection weights and input features.
     """
     from cs336_basics.impl_model import MultiHeadAttention
+
     multihead_attention = MultiHeadAttention(d_model, num_heads)
-    multihead_attention.load_state_dict({"q_proj": q_proj_weight, "k_proj": k_proj_weight, "v_proj": v_proj_weight, "o_proj": o_proj_weight})
+    multihead_attention.load_state_dict(
+        {
+            "q_proj": q_proj_weight,
+            "k_proj": k_proj_weight,
+            "v_proj": v_proj_weight,
+            "o_proj": o_proj_weight,
+        }
+    )
     return multihead_attention(in_features)
 
 
@@ -195,9 +208,20 @@ def run_multihead_self_attention_with_rope(
         implementation with the given QKV projection weights and input features.
     """
     from cs336_basics.impl_model import MultiHeadAttention
-    multihead_attention = MultiHeadAttention(d_model, num_heads, theta, max_seq_len, token_positions)
-    multihead_attention.load_state_dict({"q_proj": q_proj_weight, "k_proj": k_proj_weight, "v_proj": v_proj_weight, "o_proj": o_proj_weight})
+
+    multihead_attention = MultiHeadAttention(
+        d_model, num_heads, theta, max_seq_len, token_positions
+    )
+    multihead_attention.load_state_dict(
+        {
+            "q_proj": q_proj_weight,
+            "k_proj": k_proj_weight,
+            "v_proj": v_proj_weight,
+            "o_proj": o_proj_weight,
+        }
+    )
     return multihead_attention(in_features)
+
 
 def run_rope(
     d_k: int,
@@ -219,6 +243,7 @@ def run_rope(
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
     from cs336_basics.impl_model import RoPE
+
     rope = RoPE(theta, d_k, max_seq_len)
     return rope(in_query_or_key, token_positions)
 
@@ -293,7 +318,11 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    from cs336_basics.impl_model import TransformerBlock
+
+    transformer_block = TransformerBlock(d_model, num_heads, d_ff, theta, max_seq_len)
+    transformer_block.load_state_dict(weights)
+    return transformer_block(in_features)
 
 
 def run_transformer_lm(
@@ -375,7 +404,37 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    from cs336_basics.impl_model import TransformerLM
+
+    transformer_lm = TransformerLM(
+        vocab_size,
+        context_length,
+        d_model,
+        num_layers,
+        num_heads,
+        d_ff,
+        rope_theta,
+    )
+    # transformer_lm.load_state_dict(weights)
+    transformer_lm.embedding.load_state_dict(
+        {"weights": weights["token_embeddings.weight"]}
+    )
+    for i in range(num_layers):
+        block_weights = {
+            "attn.q_proj.weight": weights[f"layers.{i}.attn.q_proj.weight"],
+            "attn.k_proj.weight": weights[f"layers.{i}.attn.k_proj.weight"],
+            "attn.v_proj.weight": weights[f"layers.{i}.attn.v_proj.weight"],
+            "attn.output_proj.weight": weights[f"layers.{i}.attn.output_proj.weight"],
+            "ln1.weight": weights[f"layers.{i}.ln1.weight"],
+            "ffn.w1.weight": weights[f"layers.{i}.ffn.w1.weight"],
+            "ffn.w2.weight": weights[f"layers.{i}.ffn.w2.weight"],
+            "ffn.w3.weight": weights[f"layers.{i}.ffn.w3.weight"],
+            "ln2.weight": weights[f"layers.{i}.ln2.weight"],
+        }
+        transformer_lm.transformer_blocks[i].load_state_dict(block_weights)
+    transformer_lm.rms_norm.load_state_dict({"weights": weights["ln_final.weight"]})
+    transformer_lm.lm_head.load_state_dict({"weights": weights["lm_head.weight"]})
+    return transformer_lm(in_indices)
 
 
 def run_rmsnorm(
@@ -399,9 +458,11 @@ def run_rmsnorm(
         RMSNorm of the `in_features`.
     """
     from cs336_basics.impl_model import RMSNorm
+
     rmsnorm = RMSNorm(d_model, eps)
     rmsnorm.load_state_dict({"weights": weights})
     return rmsnorm(in_features)
+
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
     """Given a tensor of inputs, return the output of applying SiLU
@@ -454,6 +515,7 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         softmax normalizing the specified `dim`.
     """
     from cs336_basics.impl_model import softmax_impl
+
     return softmax_impl(in_features, dim)
 
 
@@ -475,7 +537,9 @@ def run_cross_entropy(
     raise NotImplementedError
 
 
-def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
+def run_gradient_clipping(
+    parameters: Iterable[torch.nn.Parameter], max_l2_norm: float
+) -> None:
     """Given a set of parameters, clip their combined gradients to have l2 norm at most max_l2_norm.
 
     Args:
@@ -583,7 +647,9 @@ def get_tokenizer(
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
     from cs336_basics.impl_bpe_tokenizer import BPE_Tokenizer
+
     return BPE_Tokenizer(vocab, merges, special_tokens)
+
 
 def run_train_bpe(
     input_path: str | os.PathLike,
@@ -611,9 +677,11 @@ def run_train_bpe(
                 BPE merges. Each list item is a tuple of bytes (<token1>, <token2>),
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
-        """
+    """
     from cs336_basics.impl_train_bpe import train_bpe
+
     return train_bpe(input_path, vocab_size, special_tokens, **kwargs)
+
 
 def run_train_bpe_bak(
     input_path: str | os.PathLike,
@@ -650,7 +718,7 @@ def run_train_bpe_bak(
     # # 1. Initialize vocabulary with special tokens first
     # vocab = {i: bytes([i]) for i in range(256)}
     # vocab_id = 256
-    
+
     # # 2. Add special tokens first
     # special_token_bytes = [token.encode('utf-8') for token in special_tokens]
     # for token_bytes in special_token_bytes:
@@ -662,7 +730,7 @@ def run_train_bpe_bak(
     # with open(input_path, 'r', encoding='utf-8') as f:
     #     text = f.read()
     # print(f"read text time: {time.time() - begin_time}")
-    
+
     # begin_time = time.time()
     # pre_tokens_cnt = defaultdict(int)
     # chunks = re.split("|".join(map(re.escape, special_tokens)), text)
@@ -684,7 +752,7 @@ def run_train_bpe_bak(
 
     #     if not pair_counts:
     #         break
-        
+
     #     max_count = max(pair_counts.values())
     #     best_pair = max([k for k, v in pair_counts.items() if v == max_count])
 
@@ -712,7 +780,7 @@ def run_train_bpe_bak(
     #                 # 不匹配，保持原token
     #                 new_token_tuple.append(token_tuple[idx])
     #                 idx += 1
-            
+
     #         # 只有当有合并发生时，才添加到changes
     #         if len(new_token_tuple) < len(token_tuple):
     #             changes.append((token_tuple, tuple(new_token_tuple), cnt))
@@ -720,7 +788,7 @@ def run_train_bpe_bak(
     #     for old_token_tuple, new_token_tuple, cnt in changes:
     #         pre_tokens_cnt[new_token_tuple] = pre_tokens_cnt.get(new_token_tuple, 0) + cnt
     #         del pre_tokens_cnt[old_token_tuple]
-        
+
     #     merges.append(best_pair)
 
     # return vocab, merges
@@ -730,22 +798,22 @@ def run_train_bpe_bak(
     vocab_id = 256
 
     # 2. Add special tokens
-    special_token_bytes = [token.encode('utf-8') for token in special_tokens]
+    special_token_bytes = [token.encode("utf-8") for token in special_tokens]
     for token_bytes in special_token_bytes:
         vocab[vocab_id] = token_bytes
         vocab_id += 1
 
     # 3. Process text using chunked file reading for memory efficiency
     begin_time = time.time()
-    
+
     # 使用分块处理来避免内存错误
     num_workers = mp.cpu_count()
-    
+
     # 获取文件分块边界
     chunk_data = []
-    with open(input_path, 'rb') as f:
+    with open(input_path, "rb") as f:
         # 使用第一个特殊令牌作为分割点
-        split_token = special_tokens[0].encode('utf-8') if special_tokens else b'\n'
+        split_token = special_tokens[0].encode("utf-8") if special_tokens else b"\n"
         boundaries = find_chunk_boundaries(f, num_workers, split_token)
 
         for start, end in zip(boundaries[:-1], boundaries[1:]):
@@ -762,7 +830,9 @@ def run_train_bpe_bak(
     for result in results:
         for k, v in result.items():
             pre_tokens_cnt[k] += v
-    print(f"process text time cost: {time.time() - begin_time}, len size {len(pre_tokens_cnt)}")
+    print(
+        f"process text time cost: {time.time() - begin_time}, len size {len(pre_tokens_cnt)}"
+    )
 
     begin_time = time.time()
     # 4. Merge tokens (BPE loop)
@@ -770,7 +840,7 @@ def run_train_bpe_bak(
     time_cnt = 1
     while len(vocab) < vocab_size:
         during = time.time() - begin_time
-        if (during > time_cnt * 5):
+        if during > time_cnt * 5:
             time_cnt += 1
             print(f"merge tokens time cost: {during}, vocab size: {len(vocab)}")
 
@@ -800,7 +870,10 @@ def run_train_bpe_bak(
             new_token_tuple = []
             idx = 0
             while idx < len(token_tuple):
-                if idx < len(token_tuple) - 1 and token_tuple[idx:idx + 2] == best_pair:
+                if (
+                    idx < len(token_tuple) - 1
+                    and token_tuple[idx : idx + 2] == best_pair
+                ):
                     new_token_tuple.append(new_token)
                     idx += 2
                 else:
