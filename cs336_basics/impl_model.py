@@ -38,17 +38,13 @@ def scaled_dot_product_attention_impl(
     mask: [..., seq_len_q, secq_len_k]
     """
     d_k = Q.shape[-1]
-    QK = einsum(
-        Q, K, "... seq_q d_k, ... seq_k d_k -> ... seq_q seq_k"
-    )  # [..., seq_len_q, seq_len_k]
+    QK = einsum(Q, K, "... seq_q d_k, ... seq_k d_k -> ... seq_q seq_k")  # [..., seq_len_q, seq_len_k]
     QK = QK / (d_k**0.5)
     if mask is not None:
         QK = QK.masked_fill(mask == 0, float("-inf"))
     QK = softmax_impl(QK, dim=-1)
     # einsum is so awesome!!!
-    return einsum(
-        QK, V, "... seq_q seq_k, ... seq_k d_v -> ... seq_q d_v"
-    )  # [..., seq_len_q, d_v]
+    return einsum(QK, V, "... seq_q seq_k, ... seq_k d_v -> ... seq_q d_v")  # [..., seq_len_q, d_v]
 
 
 class Linear(nn.Module):
@@ -87,9 +83,7 @@ class Embedding(nn.Module):
         super().__init__()
         self.device = device if device is not None else torch.device("cpu")
         self.dtype = dtype if dtype is not None else torch.float32
-        self.weights = _init_embedding(
-            num_embeddings, embedding_dim, self.device, self.dtype
-        )
+        self.weights = _init_embedding(num_embeddings, embedding_dim, self.device, self.dtype)
 
     def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
         # Lookup the embedding vectors for the given token IDs.
@@ -116,9 +110,7 @@ class RMSNorm(nn.Module):
         self.eps = eps
         self.device = device if device is not None else torch.device("cpu")
         self.dtype = dtype if dtype is not None else torch.float32
-        self.weights = nn.Parameter(
-            torch.ones(d_model, device=self.device, dtype=self.dtype)
-        )
+        self.weights = nn.Parameter(torch.ones(d_model, device=self.device, dtype=self.dtype))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Process an input tensor of shape (batch_size, sequence_length, d_model)
@@ -187,17 +179,11 @@ class RoPE(nn.Module):
         inv_freq = 1.0 / (theta ** (freq_seq * 2.0 / self.d_k))
         # i * theta^(-2i/d)
         t = torch.arange(max_seq_len, device=self.device)  # [max_seq_len]
-        freqs = einsum(
-            t, inv_freq, "seq_len, half_dim -> seq_len half_dim"
-        )  # [max_seq_len, d_k/2]
+        freqs = einsum(t, inv_freq, "seq_len, half_dim -> seq_len half_dim")  # [max_seq_len, d_k/2]
 
         # 注册 buffer（不需要持久化到 checkpoint）
-        self.register_buffer(
-            "cos_cached", freqs.cos(), persistent=False
-        )  # [max_seq_len, d_k/2]
-        self.register_buffer(
-            "sin_cached", freqs.sin(), persistent=False
-        )  # [max_seq_len, d_k/2]
+        self.register_buffer("cos_cached", freqs.cos(), persistent=False)  # [max_seq_len, d_k/2]
+        self.register_buffer("sin_cached", freqs.sin(), persistent=False)  # [max_seq_len, d_k/2]
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
         # Process an input tensor of shape (..., seq_len, d_k) and return a tensor of the same shape.
@@ -277,9 +263,7 @@ class MultiHeadAttention(nn.Module):
         # You should use the token positions to slice your (possibly precomputed) cos and sin tensors
         # along the sequence dimension.
         *batch_dims, seq_len, d_model = x.shape
-        assert (
-            d_model == self.d_model
-        ), f"d_model not match: {d_model} != {self.d_model}"
+        assert d_model == self.d_model, f"d_model not match: {d_model} != {self.d_model}"
 
         # 如果没有提供 token_positions，则生成默认的序列位置 [0, 1, 2, ..., seq_len-1]
         if self.token_positions is None:
@@ -329,9 +313,7 @@ class MultiHeadAttention(nn.Module):
         attn = scaled_dot_product_attention_impl(q, k, v, mask)
 
         # Concatenate heads using rearrange
-        attn = rearrange(
-            attn, "... num_heads seq_len d_k -> ... seq_len (num_heads d_k)"
-        )
+        attn = rearrange(attn, "... num_heads seq_len d_k -> ... seq_len (num_heads d_k)")
         attn = attn @ self.o_proj.T
         return attn
 
@@ -427,9 +409,7 @@ class TransformerLM(nn.Module):
         self.device = device if device is not None else torch.device("cpu")
         self.dtype = dtype if dtype is not None else torch.float32
 
-        self.embedding = Embedding(
-            vocab_size, d_model, device=self.device, dtype=self.dtype
-        )
+        self.embedding = Embedding(vocab_size, d_model, device=self.device, dtype=self.dtype)
         self.transformer_blocks = nn.ModuleList(
             [
                 TransformerBlock(

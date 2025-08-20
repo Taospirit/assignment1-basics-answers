@@ -415,9 +415,7 @@ def run_transformer_lm(
         d_ff,
         rope_theta,
     )
-    transformer_lm.embedding.load_state_dict(
-        {"weights": weights["token_embeddings.weight"]}
-    )
+    transformer_lm.embedding.load_state_dict({"weights": weights["token_embeddings.weight"]})
     for i in range(num_layers):
         block_weights = {
             "attn.q_proj.weight": weights[f"layers.{i}.attn.q_proj.weight"],
@@ -533,12 +531,12 @@ def run_cross_entropy(
     Returns:
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
-    raise NotImplementedError
+    from cs336_basics.impl_train import cross_entropy_impl
+
+    return cross_entropy_impl(inputs, targets)
 
 
-def run_gradient_clipping(
-    parameters: Iterable[torch.nn.Parameter], max_l2_norm: float
-) -> None:
+def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
     """Given a set of parameters, clip their combined gradients to have l2 norm at most max_l2_norm.
 
     Args:
@@ -547,14 +545,18 @@ def run_gradient_clipping(
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
-    raise NotImplementedError
+    from cs336_basics.impl_train import gradient_clipping
+
+    gradient_clipping(parameters, max_l2_norm)
 
 
 def get_adamw_cls() -> Any:
     """
     Returns a torch.optim.Optimizer that implements AdamW.
     """
-    raise NotImplementedError
+    from cs336_basics.impl_train import AdamW
+
+    return AdamW
 
 
 def run_get_lr_cosine_schedule(
@@ -582,7 +584,11 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    raise NotImplementedError
+    from cs336_basics.impl_train import cosine_learing_rate_scheduler
+
+    return cosine_learing_rate_scheduler(
+        it, max_learning_rate, min_learning_rate, warmup_iters, cosine_cycle_iters
+    )
 
 
 def run_save_checkpoint(
@@ -829,9 +835,7 @@ def run_train_bpe_bak(
     for result in results:
         for k, v in result.items():
             pre_tokens_cnt[k] += v
-    print(
-        f"process text time cost: {time.time() - begin_time}, len size {len(pre_tokens_cnt)}"
-    )
+    print(f"process text time cost: {time.time() - begin_time}, len size {len(pre_tokens_cnt)}")
 
     begin_time = time.time()
     # 4. Merge tokens (BPE loop)
@@ -869,10 +873,7 @@ def run_train_bpe_bak(
             new_token_tuple = []
             idx = 0
             while idx < len(token_tuple):
-                if (
-                    idx < len(token_tuple) - 1
-                    and token_tuple[idx : idx + 2] == best_pair
-                ):
+                if idx < len(token_tuple) - 1 and token_tuple[idx : idx + 2] == best_pair:
                     new_token_tuple.append(new_token)
                     idx += 2
                 else:

@@ -42,8 +42,10 @@ log_cli = true
 log_cli_level = "WARNING"
 addopts = "-s"
 
-[tool.ruff]
-line-length = 120
+[tool.black]
+line-length = 100
+# 禁用某些换行规则
+skip-string-normalization = true
 
 [tool.ruff.lint.extend-per-file-ignores]
 # Also ignore `E402` in all `__init__.py` files.
