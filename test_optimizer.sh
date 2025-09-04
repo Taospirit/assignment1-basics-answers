@@ -1,0 +1,1 @@
+uv run pytest -k "test_cross_entropy or test_adamw or test_get_lr_cosine_schedule or test_gradient_clipping"

@@ -38,7 +38,9 @@ def scaled_dot_product_attention_impl(
     mask: [..., seq_len_q, secq_len_k]
     """
     d_k = Q.shape[-1]
-    QK = einsum(Q, K, "... seq_q d_k, ... seq_k d_k -> ... seq_q seq_k")  # [..., seq_len_q, seq_len_k]
+    QK = einsum(
+        Q, K, "... seq_q d_k, ... seq_k d_k -> ... seq_q seq_k"
+    )  # [..., seq_len_q, seq_len_k]
     QK = QK / (d_k**0.5)
     if mask is not None:
         QK = QK.masked_fill(mask == 0, float("-inf"))
