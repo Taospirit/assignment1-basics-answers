@@ -6,8 +6,11 @@ from collections import defaultdict
 from typing import BinaryIO
 
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+
+
 def word_to_bytes_tuple(word: str):
     return tuple(bytes([x]) for x in word.encode("utf-8"))
+
 
 def find_chunk_boundaries(
     file: BinaryIO,
@@ -55,11 +58,12 @@ def find_chunk_boundaries(
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
     return sorted(set(chunk_boundaries))
 
+
 def process_chunk(chunk_data):
-    """Process a chunk of text for BPE training."""    
-    chunk_text, special_tokens = chunk_data    
+    """Process a chunk of text for BPE training."""
+    chunk_text, special_tokens = chunk_data
     pat_re = re.compile(PAT)
-    
+
     pre_token_cnt = defaultdict(int)
     chunks = re.split("|".join(map(re.escape, special_tokens)), chunk_text)
     for chunk in chunks:
@@ -67,6 +71,7 @@ def process_chunk(chunk_data):
             word = m.group(0)
             pre_token_cnt[word_to_bytes_tuple(word)] += 1
     return pre_token_cnt
+
 
 def train_bpe(
     input_path: str | os.PathLike,
@@ -94,7 +99,7 @@ def train_bpe(
                 BPE merges. Each list item is a tuple of bytes (<token1>, <token2>),
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
-        """
+    """
     # 1. Initialize vocabulary with single bytes
     vocab = {i: bytes([i]) for i in range(256)}
     vocab_id = 256
@@ -107,7 +112,7 @@ def train_bpe(
 
     # 3. Process text using chunked file reading for memory efficiency
     begin_time = time.time()
-    
+
     # 使用分块处理来避免内存错误
     num_workers = mp.cpu_count()
     # 获取文件分块边界
@@ -131,7 +136,9 @@ def train_bpe(
     for result in results:
         for k, v in result.items():
             pre_tokens_cnt[k] += v
-    print(f"process text time cost: {time.time() - begin_time}, pre-token size {len(pre_tokens_cnt)}")
+    print(
+        f"process text time cost: {time.time() - begin_time}, pre-token size {len(pre_tokens_cnt)}"
+    )
 
     begin_time = time.time()
     # 4. Merge tokens (BPE loop)
@@ -160,7 +167,7 @@ def train_bpe(
             pair_counts[right_pair] -= cnt
             if pair_counts[right_pair] <= 0:
                 del pair_counts[right_pair]
-            right_new_pair = (new_token, right_pair[1]) 
+            right_new_pair = (new_token, right_pair[1])
             pair_counts[right_new_pair] += cnt
 
     merges = []
@@ -168,7 +175,7 @@ def train_bpe(
     time_interval = 5.0
     while len(vocab) < vocab_size:
         during = time.time() - begin_time
-        if (during > time_cnt * time_interval):
+        if during > time_cnt * time_interval:
             time_cnt += 1
             print(f"merge tokens time cost: {during}, vocab size: {len(vocab)}")
         if not pair_counts:
@@ -192,7 +199,7 @@ def train_bpe(
             new_token_tuple = []
             idx = 0
             while idx < len(token_tuple):
-                if idx < len(token_tuple) - 1 and token_tuple[idx:idx + 2] == best_pair:
+                if idx < len(token_tuple) - 1 and token_tuple[idx : idx + 2] == best_pair:
                     # 获得新的pair计数
                     update_pair_counts(token_tuple, idx, cnt)
                     new_token_tuple.append(new_token)

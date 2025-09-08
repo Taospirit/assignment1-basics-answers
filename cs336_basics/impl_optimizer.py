@@ -117,10 +117,10 @@ def gradient_clipping(params, max_norm):
     if not params_with_grad:
         return
 
-    total_norm = math.sqrt(sum(p.grad.norm().item() ** 2 for p in params_with_grad))
+    total_norm = torch.norm(torch.stack([p.grad.data for p in params_with_grad]), p=2)
     if total_norm > max_norm:
         for p in params_with_grad:
-            p.grad.data *= max_norm / total_norm
+            p.grad.data *= max_norm / (total_norm + 1e-6)
 
 
 if __name__ == "__main__":

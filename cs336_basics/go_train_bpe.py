@@ -4,12 +4,19 @@ import sys
 import os
 import regex as re
 import numpy as np
+import pickle
 
 from tests.common import FIXTURES_PATH, gpt2_bytes_to_unicode
 from cs336_basics.impl_bpe_tokenizer import BPE_Tokenizer
 from cs336_basics.impl_train_bpe import PAT, train_bpe
 
 def save_bpe_vocab_merges(vocab, merges, output_path, overwrite=False):
+    """
+    保存BPE词汇表和合并规则 (GPT-2格式)
+    vocab: dict[int, bytes] - 词汇表，键为token ID，值为token的字节表示
+    merges: list[tuple[bytes, bytes]] - 合并规则列表
+    output_path: 输出路径前缀
+    """
     gpt2_byte_encoder = gpt2_bytes_to_unicode()
     
     # Save vocab in GPT-2 format (token string -> token ID)
@@ -36,11 +43,40 @@ def save_bpe_vocab_merges(vocab, merges, output_path, overwrite=False):
                 merge_str2 = "".join(gpt2_byte_encoder[b] for b in merge[1])
                 f.write(f"{merge_str1} {merge_str2}\n")
 
+def save_bpe_vocab_merges_pickle(vocab, merges, output_path, overwrite=False):
+    """
+    保存BPE词汇表和合并规则 (Pickle格式)
+    vocab: dict[int, bytes] - 词汇表，键为token ID，值为token的字节表示
+    merges: list[tuple[bytes, bytes]] - 合并规则列表
+    output_path: 输出路径前缀
+    """
+    # 保存词汇表 (dict[int, bytes])
+    vocab_save_path = output_path + "-vocab.pkl"
+    if not os.path.exists(vocab_save_path) or overwrite:
+        with open(vocab_save_path, "wb") as f:
+            pickle.dump(vocab, f)
+    else:
+        print(f"vocab file {vocab_save_path} already exists, skip saving!")
+    
+    # 保存合并规则 (list[tuple[bytes, bytes]])
+    merges_save_path = output_path + "-merges.pkl"
+    if not os.path.exists(merges_save_path) or overwrite:
+        with open(merges_save_path, "wb") as f:
+            pickle.dump(merges, f)
+    else:
+        print(f"merges file {merges_save_path} already exists, skip saving!")
+
 def get_tokenizer_from_vocab_merges_path(
     vocab_path: str | os.PathLike,
     merges_path: str | os.PathLike,
     special_tokens: list[str] | None = None,
 ):
+    """
+    从GPT-2格式文件加载词汇表和合并规则，创建BPE分词器
+    vocab_path: 词汇表文件路径 (.json)
+    merges_path: 合并规则文件路径 (.txt)
+    special_tokens: 特殊token列表
+    """
     gpt2_byte_decoder = {v: k for k, v in gpt2_bytes_to_unicode().items()}
     with open(vocab_path) as vocab_f:
         gpt2_vocab = json.load(vocab_f)
@@ -72,6 +108,34 @@ def get_tokenizer_from_vocab_merges_path(
     ]
     return BPE_Tokenizer(vocab, merges, special_tokens)
 
+def get_tokenizer_from_vocab_merges_path_pickle(
+    vocab_path: str | os.PathLike,
+    merges_path: str | os.PathLike,
+    special_tokens: list[str] | None = None,
+):
+    """
+    从pickle文件加载词汇表和合并规则，创建BPE分词器
+    vocab_path: 词汇表文件路径 (.pkl)
+    merges_path: 合并规则文件路径 (.pkl)
+    special_tokens: 特殊token列表
+    """
+    # 加载词汇表 (dict[int, bytes])
+    with open(vocab_path, "rb") as f:
+        vocab = pickle.load(f)
+    
+    # 加载合并规则 (list[tuple[bytes, bytes]])
+    with open(merges_path, "rb") as f:
+        merges = pickle.load(f)
+    
+    # 如果特殊token不在词汇表中，添加到词汇表
+    if special_tokens:
+        for special_token in special_tokens:
+            byte_encoded_special_token = special_token.encode("utf-8")
+            if byte_encoded_special_token not in set(vocab.values()):
+                vocab[len(vocab)] = byte_encoded_special_token
+    
+    return BPE_Tokenizer(vocab, merges, special_tokens)
+
 def get_chunks_from_dataset(dataset_name):
     root_dir = "/home/lintao/llm_codes/cs336"
     input_path = root_dir + f"/data/{dataset_name}.txt"
@@ -97,6 +161,9 @@ def train_bpe_dataset(
     output_path=None,
     overwrite=False,
 ):
+    """
+    训练BPE并同时保存为GPT-2格式和Pickle格式
+    """
     root_dir = "/home/lintao/llm_codes/cs336"
     input_path = root_dir + f"/data/{dataset_name}.txt"
     assert os.path.exists(input_path), f"input path {input_path} does not exist!"
@@ -111,14 +178,16 @@ def train_bpe_dataset(
     end_time = time.time()
     print(f"vocab size: {len(vocab)}, \nmerges size: {len(merges)}, \ndataset_name: {dataset_name}, \ntime: {end_time - begin_time}")
 
+    # 保存两种格式
     save_bpe_vocab_merges(vocab, merges, output_path, overwrite)
+    save_bpe_vocab_merges_pickle(vocab, merges, output_path, overwrite)
     
 if __name__ == "__main__":
     # 先处理较小的数据集
     import random
     random.seed(42)
 
-    vocab_size = 32000
+    vocab_size = 10000
     dataset_name = "TinyStoriesV2-GPT4-valid"
     print(f"Processing {dataset_name}...")
     train_bpe_dataset(dataset_name, vocab_size)
@@ -126,14 +195,33 @@ if __name__ == "__main__":
     chunks_str = get_chunks_from_dataset(dataset_name)
     print(f"text length: {len(chunks_str)}")
     
-    vocab_path = f"/home/lintao/llm_codes/cs336/data/{dataset_name}-bpe-{vocab_size}-vocab.json"
-    merges_path = f"/home/lintao/llm_codes/cs336/data/{dataset_name}-bpe-{vocab_size}-merges.txt"
-    tokenizer = get_tokenizer_from_vocab_merges_path(vocab_path, merges_path)
+    # 测试GPT-2格式加载
+    print("\n=== 测试GPT-2格式 ===")
+    vocab_path_gpt2 = f"/home/lintao/llm_codes/cs336/data/{dataset_name}-bpe-{vocab_size}-vocab.json"
+    merges_path_gpt2 = f"/home/lintao/llm_codes/cs336/data/{dataset_name}-bpe-{vocab_size}-merges.txt"
+    tokenizer_gpt2 = get_tokenizer_from_vocab_merges_path(vocab_path_gpt2, merges_path_gpt2)
+    
+    # 测试Pickle格式加载
+    print("\n=== 测试Pickle格式 ===")
+    vocab_path_pkl = f"/home/lintao/llm_codes/cs336/data/{dataset_name}-bpe-{vocab_size}-vocab.pkl"
+    merges_path_pkl = f"/home/lintao/llm_codes/cs336/data/{dataset_name}-bpe-{vocab_size}-merges.pkl"
+    tokenizer_pkl = get_tokenizer_from_vocab_merges_path_pickle(vocab_path_pkl, merges_path_pkl)
 
+    # 验证两种格式的分词器是否一致
+    print("\n=== 验证两种格式的一致性 ===")
+    test_text = "Hello world! This is a test."
+    ids_gpt2 = tokenizer_gpt2.encode(test_text)
+    ids_pkl = tokenizer_pkl.encode(test_text)
+    
+    print(f"GPT-2格式编码: {ids_gpt2}")
+    print(f"Pickle格式编码: {ids_pkl}")
+    print(f"编码结果是否一致: {ids_gpt2 == ids_pkl}")
+    
+    # 测试压缩比
     compression_ratio = []
     for text_str in random.sample(chunks_str, 100):
-        encode_ids = tokenizer.encode(text_str)
-        decode_text = tokenizer.decode(encode_ids)
+        encode_ids = tokenizer_pkl.encode(text_str)
+        decode_text = tokenizer_pkl.decode(encode_ids)
         assert text_str == decode_text
 
         bytes_len = len(text_str.encode('utf-8'))
@@ -141,4 +229,4 @@ if __name__ == "__main__":
         compression_ratio.append(bytes_len / bpe_len)
 
     cratio = np.array(compression_ratio)
-    print(f"compression_ratio|size: {len(cratio)}, mean: {np.mean(cratio)}, min: {np.min(cratio)}, max: {np.max(cratio)}")
+    print(f"\ncompression_ratio|size: {len(cratio)}, mean: {np.mean(cratio)}, min: {np.min(cratio)}, max: {np.max(cratio)}")

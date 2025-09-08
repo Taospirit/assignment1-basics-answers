@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import os
-from typing import BinaryIO, IO
+from typing import BinaryIO, IO, Union
 
 
 def get_batch(
@@ -37,7 +37,7 @@ def save_checkpoint(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     iteration: int,
-    out: str | os.PathLike | BinaryIO | IO[bytes],
+    out: Union[str, os.PathLike, BinaryIO, IO[bytes]],
 ):
     """
     should dump all the state from the first three parameters into the file-like object out.
@@ -60,7 +60,7 @@ def save_checkpoint(
 
 
 def load_checkpoint(
-    src: str | os.PathLike | BinaryIO | IO[bytes],
+    src: Union[str, os.PathLike, BinaryIO, IO[bytes]],
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
 ) -> int:
