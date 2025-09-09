@@ -10,7 +10,7 @@ from tests.common import FIXTURES_PATH, gpt2_bytes_to_unicode
 from cs336_basics.impl_bpe_tokenizer import BPE_Tokenizer
 from cs336_basics.impl_train_bpe import PAT, train_bpe
 
-def save_bpe_vocab_merges(vocab, merges, output_path, overwrite=False):
+def save_bpe_vocab_merges_gpt2(vocab, merges, output_path, overwrite=False):
     """
     保存BPE词汇表和合并规则 (GPT-2格式)
     vocab: dict[int, bytes] - 词汇表，键为token ID，值为token的字节表示
@@ -43,7 +43,7 @@ def save_bpe_vocab_merges(vocab, merges, output_path, overwrite=False):
                 merge_str2 = "".join(gpt2_byte_encoder[b] for b in merge[1])
                 f.write(f"{merge_str1} {merge_str2}\n")
 
-def save_bpe_vocab_merges_pickle(vocab, merges, output_path, overwrite=False):
+def save_bpe_vocab_merges(vocab, merges, output_path, overwrite=False):
     """
     保存BPE词汇表和合并规则 (Pickle格式)
     vocab: dict[int, bytes] - 词汇表，键为token ID，值为token的字节表示
@@ -136,9 +136,7 @@ def get_tokenizer_from_vocab_merges_path_pickle(
     
     return BPE_Tokenizer(vocab, merges, special_tokens)
 
-def get_chunks_from_dataset(dataset_name):
-    root_dir = "/home/lintao/llm_codes/cs336"
-    input_path = root_dir + f"/data/{dataset_name}.txt"
+def get_chunks_from_dataset(input_path):
     assert os.path.exists(input_path), f"input path {input_path} does not exist!"
     special_tokens = ["<|endoftext|>"]
     with open(input_path, 'r', encoding='utf-8') as f:
@@ -155,7 +153,7 @@ def get_words_from_chunks(chunks):
     return words
 
 def train_bpe_dataset(
-    dataset_name, 
+    dataset_path, 
     vocab_size, 
     special_tokens=["<|endoftext|>"],
     output_path=None,
@@ -164,14 +162,11 @@ def train_bpe_dataset(
     """
     训练BPE并同时保存为GPT-2格式和Pickle格式
     """
-    root_dir = "/home/lintao/llm_codes/cs336"
-    input_path = root_dir + f"/data/{dataset_name}.txt"
-    assert os.path.exists(input_path), f"input path {input_path} does not exist!"
-    output_path = root_dir + f"/data/{dataset_name}-bpe-{vocab_size}"
-    
+    assert os.path.exists(dataset_path), f"input path {dataset_path} does not exist!"
+
     begin_time = time.time()
     vocab, merges = train_bpe(
-        input_path=input_path,
+        input_path=dataset_path,
         vocab_size=vocab_size,
         special_tokens=special_tokens,
     )
@@ -179,8 +174,9 @@ def train_bpe_dataset(
     print(f"vocab size: {len(vocab)}, \nmerges size: {len(merges)}, \ndataset_name: {dataset_name}, \ntime: {end_time - begin_time}")
 
     # 保存两种格式
-    save_bpe_vocab_merges(vocab, merges, output_path, overwrite)
-    save_bpe_vocab_merges_pickle(vocab, merges, output_path, overwrite)
+    if output_path is not None:
+        # save_bpe_vocab_merges_gpt2(vocab, merges, output_path, overwrite)
+        save_bpe_vocab_merges(vocab, merges, output_path, overwrite)
     
 if __name__ == "__main__":
     # 先处理较小的数据集
@@ -188,40 +184,44 @@ if __name__ == "__main__":
     random.seed(42)
 
     vocab_size = 10000
-    dataset_name = "TinyStoriesV2-GPT4-valid"
-    print(f"Processing {dataset_name}...")
-    train_bpe_dataset(dataset_name, vocab_size)
+    data_root = "/home/lintao/llm_codes/cs336/data"
+    dataset_name = "TinyStoriesV2-GPT4-train"
+    dataset_path = f"{data_root}/{dataset_name}.txt"
+    # output_path = f"{data_root}/{dataset_name}-bpe-{vocab_size}"
+    output_path = f"{data_root}/bpe/{dataset_name}-bpe-test"
+    print(f"Processing {dataset_name}... output_path: {output_path}")
 
-    chunks_str = get_chunks_from_dataset(dataset_name)
+    train_bpe_dataset(dataset_path, vocab_size, output_path=output_path)
+    chunks_str = get_chunks_from_dataset(dataset_path)
     print(f"text length: {len(chunks_str)}")
     
-    # 测试GPT-2格式加载
-    print("\n=== 测试GPT-2格式 ===")
-    vocab_path_gpt2 = f"/home/lintao/llm_codes/cs336/data/{dataset_name}-bpe-{vocab_size}-vocab.json"
-    merges_path_gpt2 = f"/home/lintao/llm_codes/cs336/data/{dataset_name}-bpe-{vocab_size}-merges.txt"
-    tokenizer_gpt2 = get_tokenizer_from_vocab_merges_path(vocab_path_gpt2, merges_path_gpt2)
+    # # 测试GPT-2格式加载
+    # print("\n=== 测试GPT-2格式 ===")
+    # vocab_path_gpt2 = f"/home/lintao/llm_codes/cs336/data/{dataset_name}-bpe-{vocab_size}-vocab.json"
+    # merges_path_gpt2 = f"/home/lintao/llm_codes/cs336/data/{dataset_name}-bpe-{vocab_size}-merges.txt"
+    # tokenizer_gpt2 = get_tokenizer_from_vocab_merges_path(vocab_path_gpt2, merges_path_gpt2)
     
     # 测试Pickle格式加载
-    print("\n=== 测试Pickle格式 ===")
-    vocab_path_pkl = f"/home/lintao/llm_codes/cs336/data/{dataset_name}-bpe-{vocab_size}-vocab.pkl"
-    merges_path_pkl = f"/home/lintao/llm_codes/cs336/data/{dataset_name}-bpe-{vocab_size}-merges.pkl"
-    tokenizer_pkl = get_tokenizer_from_vocab_merges_path_pickle(vocab_path_pkl, merges_path_pkl)
+    # print("\n=== 测试Pickle格式 ===")
+    vocab_path = f"{output_path}-vocab.pkl"
+    merges_path = f"{output_path}-merges.pkl"
+    tokenizer = get_tokenizer_from_vocab_merges_path_pickle(vocab_path, merges_path)
 
-    # 验证两种格式的分词器是否一致
-    print("\n=== 验证两种格式的一致性 ===")
-    test_text = "Hello world! This is a test."
-    ids_gpt2 = tokenizer_gpt2.encode(test_text)
-    ids_pkl = tokenizer_pkl.encode(test_text)
+    # # 验证两种格式的分词器是否一致
+    # print("\n=== 验证两种格式的一致性 ===")
+    # test_text = "Hello world! This is a test."
+    # ids_gpt2 = tokenizer_gpt2.encode(test_text)
+    # ids_pkl = tokenizer_pkl.encode(test_text)
     
-    print(f"GPT-2格式编码: {ids_gpt2}")
-    print(f"Pickle格式编码: {ids_pkl}")
-    print(f"编码结果是否一致: {ids_gpt2 == ids_pkl}")
+    # print(f"GPT-2格式编码: {ids_gpt2}")
+    # print(f"Pickle格式编码: {ids_pkl}")
+    # print(f"编码结果是否一致: {ids_gpt2 == ids_pkl}")
     
     # 测试压缩比
     compression_ratio = []
     for text_str in random.sample(chunks_str, 100):
-        encode_ids = tokenizer_pkl.encode(text_str)
-        decode_text = tokenizer_pkl.decode(encode_ids)
+        encode_ids = tokenizer.encode(text_str)
+        decode_text = tokenizer.decode(encode_ids)
         assert text_str == decode_text
 
         bytes_len = len(text_str.encode('utf-8'))
